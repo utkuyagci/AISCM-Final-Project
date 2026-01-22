@@ -8,22 +8,37 @@ from scipy.stats import poisson
 ## parameters 
 
 # profit structure
-P = 8.0                      
-C = 3.0                      
-RHO = 0.5                    
+#C stays for now -> could be decision variable later (set by supplier agent)
+C = 3.0
 
+#Comment: RHO not needed without competition, P not fixed anymore -> set by our agent
+#RHO = 0.5
+#P = 8.0
+
+#Comment: Poisson demand not suitable here -> we need price demand response curve with little randomness
 # poisson demand
-LAM = 20                      
-DEMAND_VAR = LAM              
-CRITICAL_FRACTILE = 1 - C / P
+#LAM = 20
+#DEMAND_VAR = LAM
+#CRITICAL_FRACTILE = 1 - C / P
+
+A_intercept = 100.0
+B_Slope = 3.5
+Noise_random = 10.0
 
 # action space 
 Q_LOWER = 0
 Q_UPPER = 40
-N_ACTIONS = Q_UPPER + 1
-def action_space() -> np.ndarray:
+#N_ACTIONS = Q_UPPER + 1
+def action_space_q() -> np.ndarray:
     """ return discrete order quantities: [Q_LOWER, ..., Q_UPPER]"""
     return np.arange(Q_LOWER, Q_UPPER + 1)
+
+P_LOWER = 0
+P_UPPER = 30
+P_STEP_SIZE = 0.1
+
+def action_space_p() -> np.ndarray:
+    return np.arange(P_LOWER, P_UPPER + P_STEP_SIZE, P_STEP_SIZE)
 
 # ε-greedy
 EPS_START = 0.8
@@ -41,18 +56,19 @@ def epsilon_at(t: int, rounds: int) -> float:
 # UCB 
 UCB_C = 2.0  
 
+''' (Thomson sampling uses RHO and Demand_Var) -> need for change later
 # thompson 
 TS_PRIOR_MEAN = 0.0
 TS_PRIOR_VAR = 1000.0
 EFF_SIGMA = np.sqrt(DEMAND_VAR * (1 + RHO**2)) # Poisson variance * (1 + rho^2)
 TS_MC_SAMPLES = 300
-
+'''
 # simulation
 ROUNDS = 365
 SEED = 42
 
-## benchmarks
-
+## benchmarks (for competetive setting)
+'''
 # simple single-agent benchmark (without substitution)
 Q_SIMPLE = int(poisson.ppf(CRITICAL_FRACTILE, LAM)) 
 
@@ -115,3 +131,4 @@ MU1_NASH, MU2_NASH, MU_JOINT_NASH = expected_profit_duopoly()
 
 # evaluation
 R_MIN_JOINT = 0
+'''

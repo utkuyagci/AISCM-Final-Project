@@ -6,12 +6,17 @@ import params
 class GreedyAgent(Agent):
     """ε-greedy bandit agent"""
 
-    def __init__(self, model):
+    def __init__(self, model, role = 'quantity'):
         """Initialize agent"""
         super().__init__(model)
 
-        # Action space from global params
-        self.action_space = params.action_space()
+        self.role = role
+        # Action space depending on the role argument from params
+        if role == 'price':
+            self.action_space = params.action_space_p()
+        else:
+            self.action_space = params.action_space_q()
+
         self.n_actions = len(self.action_space)
 
         # Bandit statistics
@@ -45,7 +50,7 @@ class GreedyAgent(Agent):
 
         # Store selections
         self.action_idx = action_idx
-        self.action = int(self.action_space[action_idx])
+        self.action = self.action_space[action_idx]
 
 
     def update_belief(self):
@@ -69,11 +74,16 @@ class GreedyAgent(Agent):
 class UcbAgent(Agent):
     """UCB1 bandit agent"""
 
-    def __init__(self, model):
+    def __init__(self, model, role = 'quantity'):
         super().__init__(model)
 
-        # Action space from global params
-        self.action_space = params.action_space()
+        self.role = role
+        # Action space depending on the role argument from params
+        if role == 'price':
+            self.action_space = params.action_space_p()
+        else:
+            self.action_space = params.action_space_q()
+
         self.n_actions = len(self.action_space)
 
         # Estimates
