@@ -67,8 +67,47 @@ TS_MC_SAMPLES = 300
 ROUNDS = 365
 SEED = 42
 
-## benchmarks (for competetive setting)
+#BENCHMARK 1: optimal p,q pair (E[profit(p,q)])
+def opt_expected_profit(p, q, n_sims: int = 1000, seed: int = 0) -> float:
+    #computes expected profit
+    rng = np.random.default_rng(seed)
+
+    mu = A_intercept - B_Slope * p
+    d = mu + rng.normal(loc=0.0, scale=Noise_random, size=n_sims)
+    d = np.maximum(0.0, d)  
+
+    sales = np.minimum(q, d)
+    profit = p * sales - C * q
+    return float(np.mean(profit))
+
+
+def opt_best_pq(n_sims: int = 1000, seed: int = 0):
+    # finds the best (p,q)
+
+    prices = action_space_p()
+    quantities = action_space_q()
+
+    best_profit = -1e18
+    best_p = None
+    best_q = None
+
+    # Optional: reuse common random numbers for fairer comparisons across (p,q)
+    # but simplest version is below (same seed for each evaluation).
+    for p in prices:
+        for q in quantities:
+            pi = opt_expected_profit(float(p), float(q), n_sims=n_sims, seed=seed)
+            if pi > best_profit:
+                best_profit = pi
+                best_p = float(p)
+                best_q = float(q)
+
+    return (best_p, best_q), float(best_profit)
+opt_QP, opt_profit = opt_best_pq(n_sims=1000, seed=SEED)
+
+
+
 '''
+
 # simple single-agent benchmark (without substitution)
 Q_SIMPLE = int(poisson.ppf(CRITICAL_FRACTILE, LAM)) 
 
