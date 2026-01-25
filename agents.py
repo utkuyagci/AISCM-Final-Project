@@ -199,3 +199,127 @@ class ThompsonAgent(Agent):
         # Gamma–Poisson conjugate update
         self.alpha += x
         self.beta  += 1.0
+
+# -------------------------
+# Joint (price, quantity) agents
+# -------------------------
+
+def joint_pq_action_space():
+    
+    ps = params.action_space_p()
+    qs = params.action_space_q()
+    return [(int(p), int(q)) for p in ps for q in qs]
+
+
+class JointPQGreedyAgent(Agent):
+    
+
+    def __init__(self, model):
+        super().__init__(model)
+        self.action_space = joint_pq_action_space()
+        self.n_actions = len(self.action_space)
+
+        self.Q = np.zeros(self.n_actions, dtype=float)
+        self.N = np.zeros(self.n_actions, dtype=int)
+
+        self.action_idx = 0
+        self.p, self.q = self.action_space[self.action_idx]
+
+        self.reward = 0.0
+        self.reward_cum = 0.0
+
+    def select_action(self):
+        t = self.model.t
+        eps = params.epsilon_at(t, params.ROUNDS)
+        self.model.current_eps = eps
+
+        rng = self.model.rng
+        if rng.random() < eps:
+            self.action_idx = int(rng.integers(0, self.n_actions))
+        else:
+            best = np.flatnonzero(self.Q == self.Q.max())
+            self.action_idx = int(rng.choice(best))
+
+        self.p, self.q = self.action_space[self.action_idx]
+
+    def update_belief(self):
+        r = float(self.reward)
+        a = int(self.action_idx)
+        self.N[a] += 1
+        n = self.N[a]
+        self.Q[a] += (r - self.Q[a]) / n
+
+
+class JointPQUcbAgent(Agent):
+    
+    def __init__(self, model, c: float = None):
+        super().__init__(model)
+        self.action_space = joint_pq_action_space()
+        self.n_actions = len(self.action_space)
+
+        self.Q = np.zeros(self.n_actions, dtype=float)
+        self.N = np.zeros(self.n_actions, dtype=int)
+
+        self.c = float(params.UCB_C if c is None else c)
+
+        self.action_idx = 0
+        self.p, self.q = self.action_space[self.action_idx]
+
+        self.reward = 0.0
+        self.reward_cum = 0.0
+
+    def select_action(self):
+        t = int(self.model.t)
+        rng = self.model.rng
+
+        # Ensure each action tried once
+        untried = np.flatnonzero(self.N == 0)
+        if untried.size > 0:
+            self.action_idx = int(rng.choice(untried))
+        else:
+            bonus = self.c * np.sqrt(np.log(t + 1.0) / self.N)
+            ucb = self.Q + bonus
+            best = np.flatnonzero(ucb == ucb.max())
+            self.action_idx = int(rng.choice(best))
+
+        self.p, self.q = self.action_space[self.action_idx]
+
+    def update_belief(self):
+        r = float(self.reward)
+        a = int(self.action_idx)
+        self.N[a] += 1
+        n = self.N[a]
+        self.Q[a] += (r - self.Q[a]) / n
+
+
+class JointPQThompsonAgent(Agent):
+    
+
+    def __init__(self, model):
+        super().__init__(model)
+        self.action_space = joint_pq_action_space()
+        self.n_actions = len(self.action_space)
+
+        self.mu = np.zeros(self.n_actions, dtype=float)
+        self.N = np.zeros(self.n_actions, dtype=int)
+
+        self.action_idx = 0
+        self.p, self.q = self.action_space[self.action_idx]
+
+        self.reward = 0.0
+        self.reward_cum = 0.0
+
+    def select_action(self):
+        rng = self.model.rng
+        sigma = 1.0 / np.sqrt(self.N + 1.0)
+        samples = rng.normal(loc=self.mu, scale=sigma)
+        best = np.flatnonzero(samples == samples.max())
+        self.action_idx = int(rng.choice(best))
+        self.p, self.q = self.action_space[self.action_idx]
+
+    def update_belief(self):
+        r = float(self.reward)
+        a = int(self.action_idx)
+        self.N[a] += 1
+        n = self.N[a]
+        self.mu[a] += (r - self.mu[a]) / n
