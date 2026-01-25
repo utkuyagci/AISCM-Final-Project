@@ -3,26 +3,36 @@ import numpy as np
 from mesa import Model
 from mesa.datacollection import DataCollector
 
-from agents import GreedyAgent, UcbAgent, ThompsonAgent
+from agents import GreedyAgent, UcbAgent
 import params
 
 def create_agents(model, agent_types): 
-    ''' create agents given list of agent types'''
+    ''' 
+    Create two agents: one for price, one for quantity
+    agent_types[0] controls price, agent_types[1] controls quantity
+    '''
+    roles = ['price', 'quantity']
+    
     for i in range(len(agent_types)):
-        if agent_types[i] == "greedy": 
-            GreedyAgent.create_agents(model,n=1)
-        elif agent_types[i] == "ucb":
-            UcbAgent.create_agents(model,n=1)
-        elif agent_types[i] == "thompson":
-            ThompsonAgent.create_agents(model, n=1)
+        role = roles[i]
+        agent_type = agent_types[i]
+        
+        if agent_type == "greedy":
+            GreedyAgent(model, role=role)
+        elif agent_type == "ucb":
+            UcbAgent(model, role=role)
+        # Thompson commented out for now
+        # elif agent_type == "thompson":
+        #     ThompsonAgent(model, role=role)
 
 def regret(model):
-    a0, a1 = model.agents[0], model.agents[1]
-    r1 = model.rewards.get(a0, 0.0)
-    r2 = model.rewards.get(a1, 0.0)
-    return [params.MU1_NASH - r1, params.MU2_NASH - r2]
+    """Calculate per-round regret vs optimal joint profit"""
+    # Both agents get same profit in cooperative setting
+    profit = model.rewards.get(model.agents[0], 0.0)
+    return params.PROFIT_OPT - profit
 
 class NewsVendorModel(Model):
+    """Price-setting newsvendor with two coordinating agents"""
 
     def __init__(self, agent_type=['greedy', 'greedy']):
         super().__init__()
@@ -30,11 +40,12 @@ class NewsVendorModel(Model):
         # Simulation & learning 
         self.rng = np.random.default_rng(params.SEED) 
         self.t = 0 
-        self.current_eps = params.epsilon_at(self.t, params.ROUNDS) 
-        self.d1_eff, self.d2_eff = 0, 0
+        self.current_eps = params.epsilon_at(self.t, params.ROUNDS)
+        
+        # Track demand realization (for analysis)
+        self.demand_realized = 0.0
 
         # Agent structure & rewards
-        self.action_space = params.action_space() 
         self.num_agents = len(agent_type)
         self.rewards = {}
         create_agents(self, agent_type)
@@ -43,62 +54,75 @@ class NewsVendorModel(Model):
         self.datacollector = DataCollector(
             model_reporters={
                 "Regret": regret,
+                "Demand": lambda m: m.demand_realized
             },
             agent_reporters={
-                "Order Quantity": "action",
+                "Action": "action",  # Will be price or quantity depending on agent
                 "Reward": "reward",
                 "Cummulative Reward": "reward_cum",
-                "Cummulative Regret": "regret_cum"
+                "Cummulative Regret": "regret_cum",
+                "Role": "role"
             },
         )
 
-
-    # Helper function for demand realization
-    def sample_demands(self) -> tuple:
-        '''Helper function for demand realization'''
-        d1 = self.rng.poisson(params.LAM)
-        d2 = self.rng.poisson(params.LAM)
-        return d1, d2
-
-    def market_response(self, a_idx_1, a_idx_2) -> tuple:
-        '''Market response to agent actions'''
-        # Agent decisions
-        q1 = float(self.action_space[a_idx_1])
-        q2 = float(self.action_space[a_idx_2])
-
-        # (Effective) demand realization
-        d1, d2 = self.sample_demands()
-        d1_eff = d1 + params.RHO * max(0.0, d2 - q2)
-        d2_eff = d2 + params.RHO * max(0.0, d1 - q1)
-
-        # Agents receive rewards
-        sales1, sales2 = min(q1, d1_eff), min(q2, d2_eff)
-        r1 = params.P * sales1 - params.C * q1
-        r2 = params.P * sales2 - params.C * q2
-        return r1, r2, d1_eff, d2_eff
+    def market_response(self, price_idx, quantity_idx) -> tuple:
+        """
+        Market response for price-setting newsvendor
+        Returns: (profit, demand_realized)
+        """
+        # Get actual price and quantity from indices
+        p = float(params.action_space_p()[price_idx])
+        q = float(params.action_space_q()[quantity_idx])
+        
+        # Demand function: D = A - B*p + noise
+        expected_demand = params.A_INTERCEPT - params.B_SLOPE * p
+        noise = self.rng.normal(0, params.NOISE_STD)
+        realized_demand = expected_demand + noise
+        
+        # Demand can't be negative
+        realized_demand = max(0.0, realized_demand)
+        
+        # Sales and profit
+        sales = min(q, realized_demand)
+        profit = p * sales - params.C * q
+        
+        return profit, realized_demand
 
     def step(self):
-        # 1) Agents choose actions
+        """Execute one round of the simulation"""
+        # 1) Agents choose actions simultaneously
         self.agents.shuffle_do("select_action")
 
-        # 2) Demand realizes 
-        a1_idx, a2_idx = self.agents[0].action_idx, self.agents[1].action_idx
-        r1, r2, d1_eff, d2_eff = self.market_response(a1_idx, a2_idx)
-        self.d1_eff, self.d2_eff = d1_eff, d2_eff
+        # 2) Market responds to (price, quantity) pair
+        price_agent = self.agents[0]  # First agent is price setter
+        quantity_agent = self.agents[1]  # Second agent is quantity setter
+        
+        profit, demand = self.market_response(price_agent.action_idx, quantity_agent.action_idx)
+        self.demand_realized = demand
 
-        # 3) Agents receive rewards
-        self.rewards[self.agents[0]], self.rewards[self.agents[1]]  = r1, r2
-        self.agents[0].reward, self.agents[1].reward = r1, r2 
+        # 3) Both agents receive same profit (cooperative setting)
+        self.rewards[price_agent] = profit
+        self.rewards[quantity_agent] = profit
+        
+        price_agent.reward = profit
+        quantity_agent.reward = profit
+        
+        price_agent.reward_cum += profit
+        quantity_agent.reward_cum += profit
+        
+        # Calculate regret for both agents
+        per_round_regret = regret(self)
+        price_agent.regret_cum += per_round_regret
+        quantity_agent.regret_cum += per_round_regret
 
-        self.agents[0].reward_cum = self.agents[0].reward_cum + r1
-        self.agents[1].reward_cum = self.agents[1].reward_cum + r2
+        # 4) Update partner history (for coordination)
+        price_agent.partner_history.append(quantity_agent.action)
+        quantity_agent.partner_history.append(price_agent.action)
 
-        self.agents[0].regret_cum = self.agents[0].regret_cum + regret(self)[0]
-        self.agents[1].regret_cum = self.agents[1].regret_cum + regret(self)[1]
-
-        # 4) Collect data (one time per round, after market response)
+        # 5) Collect data
         self.datacollector.collect(self)
 
-        # 5) Agents learn 
+        # 6) Agents learn from outcomes
         self.agents.shuffle_do("update_belief")
+        
         self.t += 1
