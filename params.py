@@ -8,7 +8,9 @@ from scipy.stats import norm
 ## parameters 
 
 # profit structure
-C = 3.0  # Unit cost (supplier provides at fixed cost)
+#C = 3.0  # Unit cost (supplier provides at fixed cost)
+MANUFACTURING_COST = 2.0
+
 
 # price-demand response function: D(p) = A - B*p + epsilon
 # where epsilon ~ N(0, NOISE_STD^2)
@@ -31,6 +33,14 @@ Q_UPPER = 40
 def action_space_q() -> np.ndarray:
     """ return discrete order quantities: [Q_LOWER, ..., Q_UPPER]"""
     return np.arange(Q_LOWER, Q_UPPER + 1)
+
+#Supplier Action Space
+C_LOWER = 0.0
+C_UPPER = 30.0
+C_STEP_SIZE = 0.1
+def action_space_c() -> np.ndarray:
+    return np.arange(C_LOWER, C_UPPER + C_STEP_SIZE, C_STEP_SIZE)
+
 
 # ε-greedy
 EPS_START = 0.8

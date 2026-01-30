@@ -14,8 +14,12 @@ class GreedyAgent(Agent):
         # Action space based on role
         if role == 'price':
             self.action_space = params.action_space_p()
-        else:
+        elif role == 'quantity':
             self.action_space = params.action_space_q()
+        elif role == 'supplier':
+            self.action_space = params.action_space_c()
+
+
         
         self.n_actions = len(self.action_space)
         
@@ -146,8 +150,10 @@ class UcbAgent(Agent):
         # Action space based on role
         if role == 'price':
             self.action_space = params.action_space_p()
-        else:
+        elif role == 'quantity':
             self.action_space = params.action_space_q()
+        elif role == 'supplier':
+            self.action_space = params.action_space_c()
         
         self.n_actions = len(self.action_space)
         

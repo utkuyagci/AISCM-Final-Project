@@ -11,7 +11,7 @@ def create_agents(model, agent_types):
     Create two agents: one for price, one for quantity
     agent_types[0] controls price, agent_types[1] controls quantity
     '''
-    roles = ['price', 'quantity']
+    roles = ['price', 'quantity', 'supplier']
     
     for i in range(len(agent_types)):
         role = roles[i]
@@ -34,7 +34,7 @@ def regret(model):
 class NewsVendorModel(Model):
     """Price-setting newsvendor with two coordinating agents"""
 
-    def __init__(self, agent_type=['greedy', 'greedy']):
+    def __init__(self, agent_type=['greedy', 'greedy', 'greedy']):
         super().__init__()
 
         # Simulation & learning 
@@ -65,7 +65,7 @@ class NewsVendorModel(Model):
             },
         )
 
-    def market_response(self, price_idx, quantity_idx) -> tuple:
+    def market_response(self, price_idx, quantity_idx, cost_idx) -> tuple:
         """
         Market response for price-setting newsvendor
         Returns: (profit, demand_realized)
@@ -73,6 +73,7 @@ class NewsVendorModel(Model):
         # Get actual price and quantity from indices
         p = float(params.action_space_p()[price_idx])
         q = float(params.action_space_q()[quantity_idx])
+        c = float(params.action_space_c()[cost_idx])
         
         # Demand function: D = A - B*p + noise
         expected_demand = params.A_INTERCEPT - params.B_SLOPE * p
@@ -84,9 +85,11 @@ class NewsVendorModel(Model):
         
         # Sales and profit
         sales = min(q, realized_demand)
-        profit = p * sales - params.C * q
+        profit = p * sales - c * q
+
+        supplier_profit = q * (c - params.MANUFACTURING_COST)
         
-        return profit, realized_demand
+        return profit, realized_demand, supplier_profit
 
     def step(self):
         """Execute one round of the simulation"""
@@ -96,19 +99,23 @@ class NewsVendorModel(Model):
         # 2) Market responds to (price, quantity) pair
         price_agent = self.agents[0]  # First agent is price setter
         quantity_agent = self.agents[1]  # Second agent is quantity setter
+        supplier_agent = self.agents[2]
         
-        profit, demand = self.market_response(price_agent.action_idx, quantity_agent.action_idx)
+        profit, demand, suppl_profit = self.market_response(price_agent.action_idx, quantity_agent.action_idx, supplier_agent.action_idx)
         self.demand_realized = demand
 
         # 3) Both agents receive same profit (cooperative setting)
         self.rewards[price_agent] = profit
         self.rewards[quantity_agent] = profit
+        self.rewards[supplier_agent] = suppl_profit
         
         price_agent.reward = profit
         quantity_agent.reward = profit
+        supplier_agent.reward = suppl_profit
         
         price_agent.reward_cum += profit
         quantity_agent.reward_cum += profit
+        supplier_agent.reward_cum += suppl_profit
         
         # Calculate regret for both agents
         per_round_regret = regret(self)
