@@ -65,7 +65,7 @@ def epsilon_at(t: int, rounds: int) -> float:
 UCB_C = 2.0
 
 # Partner prediction settings
-USE_PARTNER_PREDICTION = False  # Toggle between basic and sophisticated approach
+USE_PARTNER_PREDICTION = True  # Toggle between basic and sophisticated approach (LLM benefits greatly from this)
 PARTNER_WINDOW = 30              # Moving average window for partner prediction
 PARTNER_SIMILARITY_THRESHOLD = 2.0  # Distance threshold for weighting in sophisticated mode
 
