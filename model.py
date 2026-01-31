@@ -141,16 +141,21 @@ class NewsVendorModel(Model):
         quantity_agent.reward_cum += profit
         supplier_agent.reward_cum += suppl_profit
         
-        # Calculate regret for all 3 agents
+        # Calculate regret for retailer agents only (not supplier)
 
         price_agent.regret_cum += regret(self, price_agent)
         quantity_agent.regret_cum += regret(self, quantity_agent)
 
-        supplier_agent.regret_cum += regret(self, supplier_agent)
+        # Supplier regret not tracked (focuses on profit instead)
+        # supplier_agent.regret_cum += regret(self, supplier_agent)
 
         # 4) Update partner history (for coordination)
+        # Only price and quantity agents coordinate with each other
         price_agent.partner_history.append(quantity_agent.action)
         quantity_agent.partner_history.append(price_agent.action)
+        
+        # Supplier doesn't use partner prediction (acts independently)
+        # supplier_agent.partner_history is not updated
 
         # 5) Collect data
         self.datacollector.collect(self)

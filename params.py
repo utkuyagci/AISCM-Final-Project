@@ -10,7 +10,7 @@ from scipy.stats import norm
 # profit structure
 #C = 3.0  # Unit cost (supplier provides at fixed cost)
 MANUFACTURING_COST = 2.0
-SUPPLIER_TEAM_PLAYER = False
+SUPPLIER_TEAM_PLAYER = True  # Default: supplier charges manufacturing cost
 
 # price-demand response function: D(p) = A - B*p + epsilon
 # where epsilon ~ N(0, NOISE_STD^2)
@@ -22,7 +22,7 @@ NOISE_STD = 10.0     # Standard deviation of demand noise
 # Price agent action space
 P_LOWER = 0.0
 P_UPPER = 30.0
-P_STEP_SIZE = 0.1
+P_STEP_SIZE = 0.5
 def action_space_p() -> np.ndarray:
     """ return discrete prices: [P_LOWER, P_LOWER+step, ..., P_UPPER]"""
     return np.arange(P_LOWER, P_UPPER + P_STEP_SIZE, P_STEP_SIZE)
@@ -37,13 +37,15 @@ def action_space_q() -> np.ndarray:
 #Supplier Action Space
 C_LOWER = 0.0
 C_UPPER = 30.0
-C_STEP_SIZE = 0.1
+SUPPLIER_MAX_COST = 15.0  # Price ceiling to prevent unrealistic supplier costs
+C_STEP_SIZE = 1.0  # Larger step size for faster exploration
 def action_space_c() -> np.ndarray:
 
     if SUPPLIER_TEAM_PLAYER:
         return np.array([MANUFACTURING_COST])
 
-    return np.arange(C_LOWER, C_UPPER + C_STEP_SIZE, C_STEP_SIZE)
+    # Use price ceiling instead of C_UPPER to limit supplier exploration
+    return np.arange(C_LOWER, SUPPLIER_MAX_COST + C_STEP_SIZE, C_STEP_SIZE)
 
 
 # ε-greedy
@@ -190,23 +192,80 @@ print(f"Sequential (price-first): p={P_SEQ:.2f}, q={Q_SEQ}, profit={PROFIT_SEQ:.
 '''
 
 #New: Pre-Computing dynamic Benchmarks based on supplier price c
-print("Computing optimal benchmarks (this may take a moment)...")
-PROFIT_OPTIMA_MAP = {}
-SEQ_PROFIT_OPTIMA_MAP = {}
-SUPPLIER_MAX_PROFIT = -np.inf
+# This function can be called to recompute benchmarks
+def _compute_benchmarks():
+    global PROFIT_OPTIMA_MAP, SEQ_PROFIT_OPTIMA_MAP, P_OPTIMA_MAP, Q_OPTIMA_MAP
+    global SUPPLIER_MAX_PROFIT, SUPPLIER_OPTIMAL_COST, SUPPLIER_OPTIMAL_QUANTITY
+    global _last_team_player_mode
+    
+    print("Computing optimal benchmarks (this may take a moment)...")
+    PROFIT_OPTIMA_MAP = {}
+    SEQ_PROFIT_OPTIMA_MAP = {}
+    P_OPTIMA_MAP = {}  # Store optimal prices for each cost
+    Q_OPTIMA_MAP = {}  # Store optimal quantities for each cost
+    SUPPLIER_MAX_PROFIT = -np.inf
+    SUPPLIER_OPTIMAL_COST = None
+    SUPPLIER_OPTIMAL_QUANTITY = None
 
-for c_val in action_space_c():
+    # Get all possible costs (changes based on SUPPLIER_TEAM_PLAYER)
+    if SUPPLIER_TEAM_PLAYER:
+        # Team player: supplier always charges manufacturing cost
+        # Only need benchmark for this one cost
+        retailer_costs_to_compute = np.array([MANUFACTURING_COST])
+        # But for supplier optimum calculation, use full range
+        supplier_cost_range = np.arange(C_LOWER, C_UPPER + C_STEP_SIZE, C_STEP_SIZE)
+    else:
+        # Competitive: supplier can choose from limited action space
+        # Compute benchmarks for all possible supplier costs
+        retailer_costs_to_compute = action_space_c()
+        supplier_cost_range = retailer_costs_to_compute
 
-    p_opt, q_opt, newsvendor_profit_opt = compute_optimal_joint(cost = c_val, n_sims=5000)
-    PROFIT_OPTIMA_MAP[c_val] = newsvendor_profit_opt
+    # Compute retailer optimums for all costs the supplier might actually choose
+    for c_val in retailer_costs_to_compute:
+        p_opt, q_opt, newsvendor_profit_opt = compute_optimal_joint(cost = c_val, n_sims=5000)
+        PROFIT_OPTIMA_MAP[c_val] = newsvendor_profit_opt
+        P_OPTIMA_MAP[c_val] = p_opt
+        Q_OPTIMA_MAP[c_val] = q_opt
 
-    p_seq, q_seq, newsvendor_profit_seq = compute_sequential_optimal(leader='price', cost = c_val, n_sims=5000)
-    SEQ_PROFIT_OPTIMA_MAP[c_val] = newsvendor_profit_seq
+        p_seq, q_seq, newsvendor_profit_seq = compute_sequential_optimal(leader='price', cost = c_val, n_sims=5000)
+        SEQ_PROFIT_OPTIMA_MAP[c_val] = newsvendor_profit_seq
 
-    suppl_profit = q_opt  * (c_val - MANUFACTURING_COST)
+    # Compute supplier optimum over full cost range
+    for c_val in supplier_cost_range:
+        # Need to compute q_opt for this cost if not already done
+        if c_val not in PROFIT_OPTIMA_MAP:
+            p_opt, q_opt, _ = compute_optimal_joint(cost = c_val, n_sims=5000)
+            p_seq, q_seq, _ = compute_sequential_optimal(leader='price', cost = c_val, n_sims=5000)
+        else:
+            q_opt = Q_OPTIMA_MAP[c_val]
+            p_seq, q_seq, _ = compute_sequential_optimal(leader='price', cost = c_val, n_sims=5000)
+        
+        # Supplier profit from joint optimization case
+        suppl_profit_joint = q_opt * (c_val - MANUFACTURING_COST)
+        
+        # Supplier profit from sequential case (if q_seq differs)
+        suppl_profit_seq = q_seq * (c_val - MANUFACTURING_COST)
+        
+        # Track maximum supplier profit across both cases
+        max_suppl_profit_for_c = max(suppl_profit_joint, suppl_profit_seq)
+        
+        if max_suppl_profit_for_c > SUPPLIER_MAX_PROFIT:
+            SUPPLIER_MAX_PROFIT = max_suppl_profit_for_c
+            SUPPLIER_OPTIMAL_COST = c_val
+            SUPPLIER_OPTIMAL_QUANTITY = q_opt if suppl_profit_joint >= suppl_profit_seq else q_seq
 
-    if suppl_profit > SUPPLIER_MAX_PROFIT:
-        SUPPLIER_MAX_PROFIT = suppl_profit
+    _last_team_player_mode = SUPPLIER_TEAM_PLAYER
+    
+    # Print results
+    if not SUPPLIER_TEAM_PLAYER:
+        print(f"Supplier global optimum: cost={SUPPLIER_OPTIMAL_COST:.2f}, quantity={SUPPLIER_OPTIMAL_QUANTITY}, profit={SUPPLIER_MAX_PROFIT:.2f}")
+    
+    if MANUFACTURING_COST in PROFIT_OPTIMA_MAP:
+        opt_p = P_OPTIMA_MAP[MANUFACTURING_COST]
+        opt_q = Q_OPTIMA_MAP[MANUFACTURING_COST]
+        print(f"Retailer optimal at manufacturing cost (c={MANUFACTURING_COST:.2f}): price={opt_p:.2f}, quantity={opt_q}")
 
-print('For Testing: Supplier global optimum profit is: ', SUPPLIER_MAX_PROFIT)
-#Carefull!!! Currently calculates supplier optimum profit based on q_opt (from joint case). If q_seq (from sequential case) is different than q_opt, SUPPLIER_MAX_PROFIT is no longer the optimal supplier profit
+# Force recomputation if supplier mode changes or first load
+_current_team_player = SUPPLIER_TEAM_PLAYER
+if 'PROFIT_OPTIMA_MAP' not in globals() or '_last_team_player_mode' not in globals() or _last_team_player_mode != _current_team_player:
+    _compute_benchmarks()
