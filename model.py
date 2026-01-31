@@ -3,7 +3,7 @@ import numpy as np
 from mesa import Model
 from mesa.datacollection import DataCollector
 
-from agents import GreedyAgent, UcbAgent
+from agents import GreedyAgent, UcbAgent, ThompsonAgent
 import params
 
 def create_agents(model, agent_types): 
@@ -21,9 +21,8 @@ def create_agents(model, agent_types):
             GreedyAgent(model, role=role)
         elif agent_type == "ucb":
             UcbAgent(model, role=role)
-        # Thompson commented out for now
-        # elif agent_type == "thompson":
-        #     ThompsonAgent(model, role=role)
+        elif agent_type == "thompson":
+            ThompsonAgent(model, role=role)
 
 def regret(model, agent = None):
 
