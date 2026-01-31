@@ -25,11 +25,33 @@ def create_agents(model, agent_types):
         # elif agent_type == "thompson":
         #     ThompsonAgent(model, role=role)
 
-def regret(model):
+def regret(model, agent = None):
+
+    '''
     """Calculate per-round regret vs optimal joint profit"""
     # Both agents get same profit in cooperative setting
     profit = model.rewards.get(model.agents[0], 0.0)
     return params.PROFIT_OPT - profit
+    '''
+
+    supplier = model.agents[2]
+    retailer_profit = model.rewards.get(model.agents[0], 0.0)
+
+    role = agent.role if agent is not None else 'price'                                                                 #Important Case Distinction: Can be called by DataCollector -> agent = None -> return Newsvendor regret
+
+    if role in ['price', 'quantity']:
+        current_c = supplier.action
+        optimal_retailer_profit = params.PROFIT_OPTIMA_MAP.get(current_c, 0.0)
+
+        return optimal_retailer_profit - retailer_profit
+
+    elif role == 'supplier':
+        supplier_profit = model.rewards.get(supplier, 0.0)
+        optimal_supplier_profit = params.SUPPLIER_MAX_PROFIT
+
+        return optimal_supplier_profit - supplier_profit
+
+    return 0
 
 class NewsVendorModel(Model):
     """Price-setting newsvendor with two coordinating agents"""
@@ -53,7 +75,7 @@ class NewsVendorModel(Model):
         # Initialization of data collector
         self.datacollector = DataCollector(
             model_reporters={
-                "Regret": regret,
+                "Regret": regret,                                                                                       #Newsvendor regret -> for q and p agent, NOT for supplier agent
                 "Demand": lambda m: m.demand_realized
             },
             agent_reporters={
@@ -104,23 +126,27 @@ class NewsVendorModel(Model):
         profit, demand, suppl_profit = self.market_response(price_agent.action_idx, quantity_agent.action_idx, supplier_agent.action_idx)
         self.demand_realized = demand
 
-        # 3) Both agents receive same profit (cooperative setting)
+        # 3) Both agents (q and p) receive same profit (cooperative setting)
         self.rewards[price_agent] = profit
         self.rewards[quantity_agent] = profit
+
         self.rewards[supplier_agent] = suppl_profit
         
         price_agent.reward = profit
         quantity_agent.reward = profit
+
         supplier_agent.reward = suppl_profit
         
         price_agent.reward_cum += profit
         quantity_agent.reward_cum += profit
         supplier_agent.reward_cum += suppl_profit
         
-        # Calculate regret for both agents
-        per_round_regret = regret(self)
-        price_agent.regret_cum += per_round_regret
-        quantity_agent.regret_cum += per_round_regret
+        # Calculate regret for all 3 agents
+
+        price_agent.regret_cum += regret(self, price_agent)
+        quantity_agent.regret_cum += regret(self, quantity_agent)
+
+        supplier_agent.regret_cum += regret(self, supplier_agent)
 
         # 4) Update partner history (for coordination)
         price_agent.partner_history.append(quantity_agent.action)

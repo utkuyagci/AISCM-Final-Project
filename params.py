@@ -10,7 +10,7 @@ from scipy.stats import norm
 # profit structure
 #C = 3.0  # Unit cost (supplier provides at fixed cost)
 MANUFACTURING_COST = 2.0
-
+SUPPLIER_TEAM_PLAYER = False
 
 # price-demand response function: D(p) = A - B*p + epsilon
 # where epsilon ~ N(0, NOISE_STD^2)
@@ -39,6 +39,10 @@ C_LOWER = 0.0
 C_UPPER = 30.0
 C_STEP_SIZE = 0.1
 def action_space_c() -> np.ndarray:
+
+    if SUPPLIER_TEAM_PLAYER:
+        return np.array([MANUFACTURING_COST])
+
     return np.arange(C_LOWER, C_UPPER + C_STEP_SIZE, C_STEP_SIZE)
 
 
@@ -86,7 +90,7 @@ def expected_sales(q: float, mean_demand: float, std_demand: float) -> float:
     
     return mean_demand * (1 - phi_z) + q * phi_z - std_demand * pdf_z
 
-def compute_optimal_joint(p_min=P_LOWER, p_max=P_UPPER, p_step=0.5,
+def compute_optimal_joint(cost = None, p_min=P_LOWER, p_max=P_UPPER, p_step=0.5,
                           q_min=Q_LOWER, q_max=Q_UPPER, 
                           n_sims=50000, seed=SEED) -> tuple:
     """
@@ -98,6 +102,8 @@ def compute_optimal_joint(p_min=P_LOWER, p_max=P_UPPER, p_step=0.5,
     best_p = None
     best_q = None
     best_profit = -np.inf
+
+    supplier_cost = cost if cost is not None else C                                                                     # Fallback to C = 3.0 in case of error
     
     # Grid search over price-quantity pairs
     prices = np.arange(p_min, p_max + p_step, p_step)
@@ -116,7 +122,7 @@ def compute_optimal_joint(p_min=P_LOWER, p_max=P_UPPER, p_step=0.5,
             demands = np.maximum(0, demands)  # Demand can't be negative
             
             sales = np.minimum(q, demands)
-            profits = p * sales - C * q
+            profits = p * sales - supplier_cost * q
             
             avg_profit = np.mean(profits)
             
@@ -127,13 +133,15 @@ def compute_optimal_joint(p_min=P_LOWER, p_max=P_UPPER, p_step=0.5,
     
     return float(best_p), int(best_q), float(best_profit)
 
-def compute_sequential_optimal(leader='price', n_sims=50000, seed=SEED) -> tuple:
+def compute_sequential_optimal(leader='price', cost = None, n_sims=50000, seed=SEED) -> tuple:
     """
     Compute optimal solution when one agent moves first (Stackelberg)
     leader: 'price' (price sets first, quantity responds) or 'quantity' (quantity sets first, price responds)
     Returns: (optimal_price, optimal_quantity, expected_profit)
     """
     rng = np.random.default_rng(seed)
+
+    supplier_cost = cost if cost is not None else C
     
     if leader == 'price':
         # Price agent moves first, quantity agent responds optimally
@@ -154,7 +162,7 @@ def compute_sequential_optimal(leader='price', n_sims=50000, seed=SEED) -> tuple
                 demands = mean_demand + rng.normal(0, NOISE_STD, size=n_sims)
                 demands = np.maximum(0, demands)
                 sales = np.minimum(q, demands)
-                profit = np.mean(p * sales - C * q)
+                profit = np.mean(p * sales - supplier_cost * q)
                 
                 if profit > q_best_profit:
                     q_best_profit = profit
@@ -171,9 +179,34 @@ def compute_sequential_optimal(leader='price', n_sims=50000, seed=SEED) -> tuple
         # Similar logic but quantity commits first
         raise NotImplementedError("Quantity-first not yet implemented")
 
+#Old static benchmark
+'''
 # Compute benchmarks at module load
 print("Computing optimal benchmarks (this may take a moment)...")
 P_OPT, Q_OPT, PROFIT_OPT = compute_optimal_joint()
 P_SEQ, Q_SEQ, PROFIT_SEQ = compute_sequential_optimal(leader='price')
 print(f"Optimal joint: p={P_OPT:.2f}, q={Q_OPT}, profit={PROFIT_OPT:.2f}")
 print(f"Sequential (price-first): p={P_SEQ:.2f}, q={Q_SEQ}, profit={PROFIT_SEQ:.2f}")
+'''
+
+#New: Pre-Computing dynamic Benchmarks based on supplier price c
+print("Computing optimal benchmarks (this may take a moment)...")
+PROFIT_OPTIMA_MAP = {}
+SEQ_PROFIT_OPTIMA_MAP = {}
+SUPPLIER_MAX_PROFIT = -np.inf
+
+for c_val in action_space_c():
+
+    p_opt, q_opt, newsvendor_profit_opt = compute_optimal_joint(cost = c_val, n_sims=5000)
+    PROFIT_OPTIMA_MAP[c_val] = newsvendor_profit_opt
+
+    p_seq, q_seq, newsvendor_profit_seq = compute_sequential_optimal(leader='price', cost = c_val, n_sims=5000)
+    SEQ_PROFIT_OPTIMA_MAP[c_val] = newsvendor_profit_seq
+
+    suppl_profit = q_opt  * (c_val - MANUFACTURING_COST)
+
+    if suppl_profit > SUPPLIER_MAX_PROFIT:
+        SUPPLIER_MAX_PROFIT = suppl_profit
+
+print('For Testing: Supplier global optimum profit is: ', SUPPLIER_MAX_PROFIT)
+#Carefull!!! Currently calculates supplier optimum profit based on q_opt (from joint case). If q_seq (from sequential case) is different than q_opt, SUPPLIER_MAX_PROFIT is no longer the optimal supplier profit
