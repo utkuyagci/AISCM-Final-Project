@@ -674,3 +674,193 @@ Requirements:
         partner_action = self.partner_history[-1] if len(self.partner_history) > 0 else 0.0
         
         self.history.append((float(self.action), r, partner_action))
+
+# -------------------------
+# Joint (price, quantity) agents
+# -------------------------
+
+def joint_pq_action_space():
+    
+    ps = params.action_space_p()
+    qs = params.action_space_q()
+    return [(int(p), int(q)) for p in ps for q in qs]
+
+
+class JointPQGreedyAgent(Agent):
+    
+
+    def __init__(self, model):
+        super().__init__(model)
+        self.action_space = joint_pq_action_space()
+        self.n_actions = len(self.action_space)
+
+        self.Q = np.zeros(self.n_actions, dtype=float)
+        self.N = np.zeros(self.n_actions, dtype=int)
+
+        self.action_idx = 0
+        self.p, self.q = self.action_space[self.action_idx]
+
+        self.reward = 0.0
+        self.reward_cum = 0.0
+
+    def select_action(self):
+        t = self.model.t
+        eps = params.epsilon_at(t, params.ROUNDS)
+        self.model.current_eps = eps
+
+        rng = self.model.rng
+        if rng.random() < eps:
+            self.action_idx = int(rng.integers(0, self.n_actions))
+        else:
+            best = np.flatnonzero(self.Q == self.Q.max())
+            self.action_idx = int(rng.choice(best))
+
+        self.p, self.q = self.action_space[self.action_idx]
+
+    def update_belief(self):
+        r = float(self.reward)
+        a = int(self.action_idx)
+        self.N[a] += 1
+        n = self.N[a]
+        self.Q[a] += (r - self.Q[a]) / n
+        self.eps = params.epsilon_at(self.model.t + 1, params.ROUNDS)
+
+
+class JointPQUcbAgent(Agent):
+    
+    def __init__(self, model, c: float = None):
+        super().__init__(model)
+        self.action_space = joint_pq_action_space()
+        self.n_actions = len(self.action_space)
+
+        self.Q = np.zeros(self.n_actions, dtype=float)
+        self.N = np.zeros(self.n_actions, dtype=int)
+
+        self.c = float(params.UCB_C if c is None else c)
+
+        self.action_idx = 0
+        self.p, self.q = self.action_space[self.action_idx]
+
+        self.reward = 0.0
+        self.reward_cum = 0.0
+
+    def select_action(self):
+        t = int(self.model.t)
+        rng = self.model.rng
+
+        # Ensure each action tried once
+        untried = np.flatnonzero(self.N == 0)
+        if untried.size > 0:
+            self.action_idx = int(rng.choice(untried))
+        else:
+            bonus = self.c * np.sqrt(2 * np.log(t) / self.N)
+            ucb = self.Q + bonus
+            best = np.flatnonzero(ucb == ucb.max())
+            self.action_idx = int(rng.choice(best))
+
+        self.p, self.q = self.action_space[self.action_idx]
+
+    def update_belief(self):
+        r = float(self.reward)
+        a = int(self.action_idx)
+        self.N[a] += 1
+        n = self.N[a]
+        self.Q[a] += (r - self.Q[a]) / n
+
+
+class JointPQThompsonAgent(Agent):
+    
+
+    def __init__(self, model):
+        super().__init__(model)
+        self.action_space = joint_pq_action_space()
+        self.n_actions = len(self.action_space)
+
+        # Thompson Sampling with Normal-Gamma prior (no partner prediction)
+        # For each action a, we model reward ~ N(μ_a, 1/τ_a)
+        # Prior: μ_a ~ N(μ_0, 1/(κ_0 * τ_a)), τ_a ~ Gamma(α_0, β_0)
+
+        # Prior hyperparameters (weakly informative)
+        self.mu_0 = 0.0  # Prior mean
+        self.kappa_0 = 0.001  # Prior precision scaling
+        self.alpha_0 = 1.0  # Gamma shape
+        self.beta_0 = 1.0  # Gamma rate
+
+        # Posterior hyperparameters (updated with data)
+        self.mu_n = np.full(self.n_actions, self.mu_0, dtype=float)
+        self.kappa_n = np.full(self.n_actions, self.kappa_0, dtype=float)
+        self.alpha_n = np.full(self.n_actions, self.alpha_0, dtype=float)
+        self.beta_n = np.full(self.n_actions, self.beta_0, dtype=float)
+
+        # Track observations for updates
+        self.counts = np.zeros(self.n_actions, dtype=int)
+        self.sum_rewards = np.zeros(self.n_actions, dtype=float)
+        self.sum_sq_rewards = np.zeros(self.n_actions, dtype=float)
+
+        self.action_idx = 0
+        self.p, self.q = self.action_space[self.action_idx]
+
+        self.reward = 0.0
+        self.reward_cum = 0.0
+
+    def select_action(self):
+        """
+        Thompson Sampling: Sample from posterior predictive distribution for each action,
+        choose action with highest sampled value.
+        """
+        rng = self.model.rng
+
+        sampled_means = np.zeros(self.n_actions)
+
+        for i in range(self.n_actions):
+            mu_n = self.mu_n[i]
+            kappa_n = self.kappa_n[i]
+            alpha_n = self.alpha_n[i]
+            beta_n = self.beta_n[i]
+
+            # Sample precision from Gamma(alpha_n, beta_n)
+            tau = rng.gamma(alpha_n, 1.0 / beta_n)
+
+            # Sample mean from N(mu_n, 1/(kappa_n * tau))
+            if tau > 0:
+                std = np.sqrt(1.0 / (kappa_n * tau))
+                sampled_mean = rng.normal(mu_n, std)
+            else:
+                sampled_mean = mu_n
+
+            sampled_means[i] = sampled_mean
+
+        # Choose action with highest sampled mean
+        m = float(np.max(sampled_means))
+        best = np.flatnonzero(sampled_means == m)
+        self.action_idx = int(rng.choice(best))
+        self.p, self.q = self.action_space[self.action_idx]
+
+    def update_belief(self):
+        """Update posterior using Normal-Gamma conjugate update"""
+        a_idx = int(self.action_idx)
+        r = float(self.reward)
+
+        # Update sufficient statistics
+        n = self.counts[a_idx]
+        self.counts[a_idx] = n + 1
+        self.sum_rewards[a_idx] += r
+        self.sum_sq_rewards[a_idx] += r * r
+
+        # Compute sample mean and variance
+        n_new = n + 1
+        sample_mean = self.sum_rewards[a_idx] / n_new
+
+        if n_new > 1:
+            sample_var = (self.sum_sq_rewards[a_idx] - n_new * sample_mean**2) / (n_new - 1)
+            sample_var = max(sample_var, 1e-6)  # Numerical stability
+        else:
+            sample_var = 1.0
+
+
+        # Normal-Gamma conjugate update
+        self.kappa_n[a_idx] = self.kappa_0 + n_new
+        self.mu_n[a_idx] = (self.kappa_0 * self.mu_0 + n_new * sample_mean) / self.kappa_n[a_idx]
+        self.alpha_n[a_idx] = self.alpha_0 + n_new / 2.0
+        self.beta_n[a_idx] = self.beta_0 + 0.5 * n_new * sample_var + \
+                             0.5 * (self.kappa_0 * n_new / self.kappa_n[a_idx]) * (sample_mean - self.mu_0)**2
