@@ -683,7 +683,7 @@ def joint_pq_action_space():
     
     ps = params.action_space_p()
     qs = params.action_space_q()
-    return [(int(p), int(q)) for p in ps for q in qs]
+    return [(float(p), int(q)) for p in ps for q in qs]
 
 
 class JointPQGreedyAgent(Agent):
