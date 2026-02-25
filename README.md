@@ -20,12 +20,6 @@ Project Github Link: https://github.com/utkuyagci/AISCM-Final-Project
 - **`execute_llm_agent.ipynb`** - LLM-based agent experiments using Deepseek R1 for decision making
 - **`supplier.ipynb`** - Supplier agent analysis with competitive vs. team player modes and price ceiling sensitivity
 
-## Getting Started
-
-### Prerequisites
-
-- Python 3.14 or higher
-- pip or poetry package manager
 
 ### Installation Steps
 
