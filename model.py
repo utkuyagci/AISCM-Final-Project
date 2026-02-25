@@ -57,11 +57,13 @@ def regret(model, agent = None):
 class NewsVendorModel(Model):
     """Price-setting newsvendor with two coordinating agents"""
 
-    def __init__(self, agent_type=['greedy', 'greedy', 'greedy']):
+    def __init__(self, agent_type=['greedy', 'greedy', 'greedy'], seed: int | None = None):
         super().__init__()
 
         # Simulation & learning 
-        self.rng = np.random.default_rng(params.SEED) 
+        if seed is None:
+            seed = params.SEED
+        self.rng = np.random.default_rng(seed) 
         self.t = 0 
         self.current_eps = params.epsilon_at(self.t, params.ROUNDS)
         
