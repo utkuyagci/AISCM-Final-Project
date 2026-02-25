@@ -2,6 +2,8 @@
 
 Multi-agent reinforcement learning simulation for a newsvendor supply chain problem with price and quantity optimization.
 
+Project Github Link: https://github.com/utkuyagci/AISCM-Final-Project
+
 ## Project Structure
 
 ### Core Files
@@ -18,8 +20,31 @@ Multi-agent reinforcement learning simulation for a newsvendor supply chain prob
 - **`execute_llm_agent.ipynb`** - LLM-based agent experiments using Deepseek R1 for decision making
 - **`supplier.ipynb`** - Supplier agent analysis with competitive vs. team player modes and price ceiling sensitivity
 
+## Getting Started
 
-```
+### Prerequisites
+
+- Python 3.14 or higher
+- pip or poetry package manager
+
+### Installation Steps
+
+1. **Clone the repository**
+   ```bash
+   git clone https://github.com/utkuyagci/AISCM-Final-Project.git
+   cd AISCM-Final-Project
+   ```
+
+2. **Create a virtual environment (recommended)**
+   ```bash
+   python -m venv .venv
+   source .venv/bin/activate  # On Windows: .venv\Scripts\activate
+   ```
+
+3. **Set up environment variables (optional, for LLM agent)**
+   - Create a `.env` file in the project root
+   - Add your OpenAI API key: `api_key=your_key_here` (For the LLM agent)
+
 ## Usage
 
 Open any of the Jupyter notebooks to run experiments. 
