@@ -15,24 +15,14 @@ Multi-agent reinforcement learning simulation for a newsvendor supply chain prob
 
 - **`execute.ipynb`** - Basic simulation runs and visualization of multi-agent scenarios
 - **`experiment.ipynb`** - Comprehensive experiments comparing different agent configurations
-- **`execute_llm_agent.ipynb`** - LLM-based agent experiments using GPT-4 for decision making
+- **`execute_llm_agent.ipynb`** - LLM-based agent experiments using Deepseek R1 for decision making
 - **`supplier.ipynb`** - Supplier agent analysis with competitive vs. team player modes and price ceiling sensitivity
 
-### Configuration
 
-- **`pyproject.toml`** - Project dependencies and metadata
-- **`.env`** - Environment variables (e.g., OpenAI API key for LLM agent)
-- **`.gitignore`** - Git ignore rules
-
-## Installation
-
-```bash
-pip install -e .
 ```
-
 ## Usage
 
-Open any of the Jupyter notebooks to run experiments. Start with `execute.ipynb` for basic multi-agent simulations.
+Open any of the Jupyter notebooks to run experiments. 
 
 ## Key Features
 
@@ -42,3 +32,9 @@ Open any of the Jupyter notebooks to run experiments. Start with `execute.ipynb`
 - LLM-based decision making
 - Information sharing experiments
 - Price ceiling sensitivity analysis
+
+## Contributors
+
+- **Utku Yagci** - [utkuuguryagci07@gmail.com](mailto:utkuuguryagci07@gmail.com)
+- **Mine Gokdere** - [gokdere.mine3@gmail.com](mailto:gokdere.mine3@gmail.com)
+- **Patrick Poremba** - [patrick.poremba@tum.de](mailto:patrick.poremba@tum.de)
