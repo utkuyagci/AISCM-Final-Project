@@ -1,4 +1,4 @@
-
+# this py file contains the single agent model for benchmarking
 
 import numpy as np
 from mesa import Agent, Model
